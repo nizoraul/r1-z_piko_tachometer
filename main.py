@@ -1,5 +1,5 @@
 # Wokwi用 main.py
-# 起動画面(10秒) → タコメーター画面(実パルスカウントでRPM表示)
+# 起動画面(6秒、区切り線がプログレスバーとしてアニメーション) → タコメーター画面
 #
 # 【Wokwi側の準備】
 # 1. ssd1306.py をプロジェクトに追加済みであること
@@ -14,6 +14,14 @@ import time
 
 WIDTH = 128
 HEIGHT = 64
+
+SPLASH_DURATION_SEC = 6
+PROGRESS_STEPS = 30  # 滑らかさ。増やすほど滑らかになるがI2C負荷も増える
+
+# 罫線(プログレスバー)の位置とサイズ
+BAR_X = 20
+BAR_Y = 30
+BAR_MAX_W = WIDTH - 40
 
 # --- OLED ---
 i2c = I2C(0, scl=Pin(1), sda=Pin(0), freq=400000)
@@ -42,8 +50,11 @@ def calc_rpm(count, interval_ms, pulses_per_rev):
     return revs / minutes
 
 
-def draw_text_scaled(display, text, x, y, scale=2):
-    """デフォルト8x8フォントをピクセル単位で拡大し、太字風に描画"""
+def draw_text_scaled(display, text, x, y, scale=2, shear=0):
+    """
+    デフォルト8x8フォントをピクセル単位で拡大して描画。
+    shear > 0 を指定すると、上の行ほど右にずれた疑似イタリック(斜体)になる。
+    """
     w = 8 * len(text)
     h = 8
     buf = bytearray(w)
@@ -51,29 +62,45 @@ def draw_text_scaled(display, text, x, y, scale=2):
     fb.text(text, 0, 0, 1)
 
     for j in range(h):
+        row_shift = (h - 1 - j) * shear
         for i in range(w):
             if fb.pixel(i, j):
-                display.fill_rect(x + i * scale, y + j * scale, scale, scale, 1)
+                display.fill_rect(
+                    x + i * scale + row_shift, y + j * scale, scale, scale, 1
+                )
 
 
-def draw_splash():
+def draw_splash_static():
+    """文字部分だけ描画(罫線部分は空けておく)"""
     oled.fill(0)
 
     text1 = "YAMAHA"
     scale1 = 2
     w1 = 8 * len(text1) * scale1
     x1 = (WIDTH - w1) // 2
-    draw_text_scaled(oled, text1, x1, 8, scale1)
-
-    oled.hline(10, 30, WIDTH - 20, 1)
+    draw_text_scaled(oled, text1, x1, 14, scale1)
 
     text2 = "R1-Z"
-    scale2 = 3
+    scale2 = 4
+    shear2 = 1
     w2 = 8 * len(text2) * scale2
     x2 = (WIDTH - w2) // 2
-    draw_text_scaled(oled, text2, x2, 38, scale2)
+    draw_text_scaled(oled, text2, x2, 34, scale2, shear2)
 
+
+def draw_splash_with_progress():
+    oled.invert(1)  # 白黒反転(白地に黒抜き)
+    draw_splash_static()
     oled.show()
+
+    step_delay = int(SPLASH_DURATION_SEC * 1000 / PROGRESS_STEPS)
+
+    for i in range(PROGRESS_STEPS + 1):
+        w = int(BAR_MAX_W * i / PROGRESS_STEPS)
+        oled.fill_rect(BAR_X, BAR_Y, BAR_MAX_W, 1, 0)  # 罫線部分だけ消す
+        oled.hline(BAR_X, BAR_Y, w, 1)
+        oled.show()
+        time.sleep_ms(step_delay)
 
 
 def draw_tacho(rpm):
@@ -95,8 +122,8 @@ def draw_tacho(rpm):
 
 
 # --- メイン処理 ---
-draw_splash()
-time.sleep(10)
+draw_splash_with_progress()
+oled.invert(0)  # タコメーター画面は通常表示(黒地に白文字)に戻す
 
 last_time = time.ticks_ms()
 
