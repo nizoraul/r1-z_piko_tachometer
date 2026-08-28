@@ -107,7 +107,11 @@ def draw_tacho(rpm):
     oled.fill(0)
 
     rpm_text = str(int(rpm))
-    scale = 4
+
+    # 桁数に応じてスケールを自動調整(画面幅128pxに収まるように)
+    scale = min(4, WIDTH // (8 * len(rpm_text)))
+    scale = max(1, scale)  # 万一桁数が極端に多くても最低スケール1は確保
+
     w = 8 * len(rpm_text) * scale
     x = (WIDTH - w) // 2
     draw_text_scaled(oled, rpm_text, x, 12, scale)
