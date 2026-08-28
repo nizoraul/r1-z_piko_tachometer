@@ -7,7 +7,7 @@
 # 3. パルス入力(スタブ): Clock GeneratorパーツのOUTピンを GP16 に接続
 #    Clock Generatorの周波数(Hz) = RPM / 60 (R1-Z, 1回転1パルス想定)
 
-from machine import Pin, I2C
+from machine import Pin, I2C, PWM
 import framebuf
 import ssd1306
 import time
@@ -42,6 +42,30 @@ def pulse_handler(pin):
 
 pulse_input = Pin(PULSE_IN_PIN, Pin.IN, Pin.PULL_DOWN)
 pulse_input.irq(trigger=Pin.IRQ_RISING, handler=pulse_handler)
+
+# --- パルス出力(タコメーター駆動用) ---
+PULSE_OUT_PIN = 17
+PULSES_PER_REV_OUT = 1   # 純正メーターが期待するパルス数(要確認・調整)
+OUT_DUTY_PERCENT = 30
+MAX_PWM_FREQ = 20000
+MIN_PWM_FREQ = 8  # RP2040のPWM下限(理論値約7.5Hz)を下回らないようにする
+
+tacho_out = PWM(Pin(PULSE_OUT_PIN))
+tacho_out.duty_u16(0)
+
+
+def set_tacho_output(rpm):
+    if rpm <= 0:
+        tacho_out.duty_u16(0)
+        return
+    freq = int(rpm * PULSES_PER_REV_OUT / 60)
+    if freq < MIN_PWM_FREQ:
+        # PWMが安定して出せない低回転域は出力を止める
+        tacho_out.duty_u16(0)
+        return
+    freq = min(freq, MAX_PWM_FREQ)
+    tacho_out.freq(freq)
+    tacho_out.duty_u16(int(65535 * OUT_DUTY_PERCENT / 100))
 
 
 def calc_rpm(count, interval_ms, pulses_per_rev):
@@ -145,4 +169,5 @@ while True:
 
     rpm = calc_rpm(count, elapsed, PULSES_PER_REV_IN)
 
+    set_tacho_output(rpm)
     draw_tacho(rpm)
